@@ -13,9 +13,15 @@ function CollapseFromInside() {
   );
 }
 
-function Harness(props: { readonly onResize?: (width: number) => void }) {
+function Harness(props: {
+  readonly onResize?: (width: number) => void;
+  readonly mobileBreakpoint?: number;
+}) {
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider
+      defaultOpen
+      {...(props.mobileBreakpoint ? { mobileBreakpoint: props.mobileBreakpoint } : {})}
+    >
       <Sidebar
         collapsible="offcanvas"
         resizable={{
@@ -70,5 +76,29 @@ describe("Sidebar", () => {
     rail.dispatchEvent(new PointerEvent("pointerup", { ...pointer, clientX: left + 80 }));
 
     expect(onResize).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles the sheet below a custom breakpoint without collapsing the docked sidebar", async () => {
+    // Between the default 768px cutoff and the layout's own breakpoint.
+    await page.viewport(820, 800);
+    await using screen = await render(<Harness mobileBreakpoint={900} />, {
+      router: false /* no routes involved */,
+    });
+    const wrapper = screen.container.querySelector<HTMLElement>('[data-slot="sidebar-wrapper"]')!;
+    const trigger = screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!;
+    await vi.waitFor(() => expect(wrapper.dataset.sidebarMobile).toBe("true"));
+    expect(wrapper.dataset.sidebarState).toBe("collapsed");
+
+    await userEvent.click(trigger);
+    await expect.element(page.getByRole("button", { name: "Collapse" })).toBeVisible();
+    expect(document.querySelector('[data-mobile="true"][data-slot="sidebar"]')).not.toBeNull();
+    expect(wrapper.dataset.sidebarState).toBe("expanded");
+
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(wrapper.dataset.sidebarState).toBe("collapsed"));
+
+    await page.viewport(1280, 800);
+    await vi.waitFor(() => expect(wrapper.dataset.sidebarMobile).toBe("false"));
+    expect(wrapper.dataset.sidebarState).toBe("expanded");
   });
 });

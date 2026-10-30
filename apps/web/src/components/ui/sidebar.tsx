@@ -97,11 +97,8 @@ function useSidebarVisibility() {
   return isMobile ? openMobile : open;
 }
 
-// The `max-md` breakpoint, also read when a shortcut fires.
-const SIDEBAR_MOBILE_QUERY = "(max-width: 767px)";
-
-function isMobileViewport(): boolean {
-  return typeof window !== "undefined" && window.matchMedia(SIDEBAR_MOBILE_QUERY).matches;
+function isMobileViewport(query: string): boolean {
+  return typeof window !== "undefined" && window.matchMedia(query).matches;
 }
 
 async function persistSidebarOpen(open: boolean) {
@@ -140,13 +137,13 @@ function createSidebarOpenStore(defaultOpen: boolean) {
     state = next;
     for (const listener of listeners) listener();
   };
-  const setOpen = (open: boolean) => {
+  const setOpen = (open: boolean, mobileQuery: string) => {
     if (!open && state.open) {
       for (const listener of collapseListeners) listener();
       moveFocusOutOfCollapsingSidebar();
     }
     if (open !== state.open) {
-      if (!isMobileViewport()) announceSidebarVisibility(open);
+      if (!isMobileViewport(mobileQuery)) announceSidebarVisibility(open);
       publish({ ...state, open });
     }
     void persistSidebarOpen(open);
@@ -164,7 +161,10 @@ function createSidebarOpenStore(defaultOpen: boolean) {
     getSnapshot: () => state,
     setOpen,
     setOpenMobile,
-    toggle: () => (isMobileViewport() ? setOpenMobile(!state.openMobile) : setOpen(!state.open)),
+    toggle: (mobileQuery: string) =>
+      isMobileViewport(mobileQuery)
+        ? setOpenMobile(!state.openMobile)
+        : setOpen(!state.open, mobileQuery),
     onCollapse: (listener: () => void) => {
       collapseListeners.add(listener);
       return () => {
@@ -176,14 +176,17 @@ function createSidebarOpenStore(defaultOpen: boolean) {
 
 function SidebarProvider({
   defaultOpen = true,
+  mobileBreakpoint = 768,
   className,
   style,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean;
+  mobileBreakpoint?: number;
 }) {
-  const isMobile = useMediaQuery(SIDEBAR_MOBILE_QUERY);
+  const mobileQuery = `(width < ${mobileBreakpoint}px)`;
+  const isMobile = useMediaQuery(mobileQuery);
   const [store] = React.useState(() => createSidebarOpenStore(defaultOpen));
   const { open, openMobile } = React.useSyncExternalStore(
     store.subscribe,
@@ -195,6 +198,8 @@ function SidebarProvider({
     setMobileSheetMounted(element !== null);
   };
 
+  const setOpen = (open: boolean) => store.setOpen(open, mobileQuery);
+  const toggleSidebar = () => store.toggle(mobileQuery);
   const state = resolveSidebarState({ isMobile, open, openMobile });
 
   const contextValue: SidebarContextProps = {
@@ -203,10 +208,10 @@ function SidebarProvider({
     openMobile,
     mobileSheetMounted,
     setMobileSheetElement,
-    setOpen: store.setOpen,
+    setOpen,
     setOpenMobile: store.setOpenMobile,
     state,
-    toggleSidebar: store.toggle,
+    toggleSidebar,
     onCollapse: store.onCollapse,
   };
 
@@ -218,6 +223,7 @@ function SidebarProvider({
           SIDEBAR_TITLEBAR_CONTROL_SIZE,
           className,
         )}
+        data-sidebar-mobile={isMobile}
         data-sidebar-state={state}
         data-slot="sidebar-wrapper"
         style={
@@ -341,7 +347,7 @@ function Sidebar({
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
-        className="group peer hidden text-sidebar-foreground md:block"
+        className="group peer text-sidebar-foreground"
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-collapsible-mode={collapsible}
         inert={offcanvasCollapsed}
@@ -364,7 +370,7 @@ function Sidebar({
         />
         <div
           className={cn(
-            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+            "fixed inset-y-0 z-10 flex h-svh w-(--sidebar-width)",
             "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
